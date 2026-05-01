@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Overlay Notes — Mockup</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="page-header">
+      <div class="brand">
+        <span class="brand-dot"></span>
+        <span>Overlay Notes</span>
+      </div>
+      <nav class="tabs">
+        <button class="tab active" data-grid="dots">Dots</button>
+        <button class="tab" data-grid="lines">Lines</button>
+        <button class="tab" data-grid="squared">Squared</button>
+        <button class="tab" data-grid="none">None</button>
+      </nav>
+      <div class="toggle">
+        <span>Persistence</span>
+        <label class="switch">
+          <input type="checkbox" id="persistence" />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </header>
+
+    <main class="stage">
+      <section class="device">
+        <div class="device-frame">
+          <div class="canvas" data-grid="dots">
+            <svg class="grid" aria-hidden="true">
+              <defs>
+                <pattern id="p-dots" width="28" height="28" patternUnits="userSpaceOnUse">
+                  <circle cx="14" cy="14" r="1.4" fill="white" />
+                </pattern>
+                <pattern id="p-lines" width="28" height="28" patternUnits="userSpaceOnUse">
+                  <path d="M 0 28 L 1000 28" stroke="white" stroke-width="1" />
+                </pattern>
+                <pattern id="p-squared" width="28" height="28" patternUnits="userSpaceOnUse">
+                  <path d="M 28 0 L 0 0 0 28" fill="none" stroke="white" stroke-width="1" />
+                </pattern>
+              </defs>
+              <rect class="grid-rect" width="100%" height="100%" fill="url(#p-dots)" />
+            </svg>
+
+            <svg class="strokes" viewBox="0 0 600 360" preserveAspectRatio="none">
+              <path
+                d="M 40 120 Q 120 40 200 120 T 360 140 T 540 90"
+                stroke="#F87171"
+                stroke-width="4"
+                fill="none"
+                stroke-linecap="round"
+              />
+              <path
+                d="M 60 220 L 220 220 L 220 300 L 60 300 Z"
+                stroke="#60A5FA"
+                stroke-width="3"
+                fill="none"
+              />
+              <path
+                d="M 300 200 L 520 200"
+                stroke="#FBBF24"
+                stroke-width="14"
+                stroke-opacity="0.35"
+                stroke-linecap="round"
+              />
+              <path
+                d="M 340 250 Q 380 280 420 250 T 500 260"
+                stroke="#4ADE80"
+                stroke-width="3"
+                fill="none"
+                stroke-linecap="round"
+              />
+            </svg>
+
+            <div class="top-chrome">
+              <div class="pill brand-pill">
+                <span class="brand-dot small"></span>Overlay Notes
+              </div>
+              <div class="pill title-pill">Morning brainstorm</div>
+              <div class="pill icon-pill" id="cloud-indicator">Cloud off</div>
+            </div>
+
+            <div class="bottom-chrome">
+              <div class="toolbar">
+                <button class="tool active" title="Pen">Pen</button>
+                <button class="tool" title="Highlighter">Hi</button>
+                <button class="tool" title="Eraser">Er</button>
+                <span class="divider"></span>
+                <button class="tool" title="Undo">Undo</button>
+                <button class="tool" title="Clear">Clear</button>
+                <span class="divider"></span>
+                <button class="tool save">Save</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="caption">iPad · Transparent overlay with dot grid</p>
+      </section>
+
+      <aside class="notes">
+        <h2>What this mockup shows</h2>
+        <ul>
+          <li>Canvas is fully transparent — <strong>no photo background</strong>.</li>
+          <li>Geometric grids only: Dots, Lines, Squared, or None.</li>
+          <li>Cloud save is a user-controlled toggle (top right).</li>
+          <li>Chrome is translucent so strokes remain the hero.</li>
+          <li>Accent color is green, never purple.</li>
+        </ul>
+        <h2>Try it</h2>
+        <p>
+          Switch grids via the tabs above. Flip the Persistence switch to see the cloud
+          indicator change state.
+        </p>
+      </aside>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>
