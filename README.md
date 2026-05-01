@@ -6,7 +6,3 @@ A transparent drawing overlay for iPad and iPhone. Draw, annotate, and highlight
 - Pen, highlighter, and eraser tools with configurable color, width, and opacity
 - Fullscreen and floating (draggable) overlay modes
 - Cloud save is opt-in and can be turned on or off at any time
-
-See `docs/` for full product documentation.
-
-[![Open in Bolt](https://bolt.new/static/open-in-bolt.svg)](https://bolt.new/~/sb1-aetkkzf6)
