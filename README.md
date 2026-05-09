@@ -1,4 +1,4 @@
-# Overlay Notes
+# Overlay
 
 A transparent drawing overlay for iPad and iPhone. Draw, annotate, and highlight on top of anything — a lesson, a video, a document — without the app imposing its own background.
 
