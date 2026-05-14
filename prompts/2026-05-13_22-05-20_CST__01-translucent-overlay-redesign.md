@@ -2,14 +2,24 @@
 
 **Version:** 01
 **Created:** 2026-05-13 22:05:20 CST
-**Scope:** `swift-app/overlay_v1/Overlay/` (SwiftUI / PencilKit, iPadOS + iOS)
+**Scope:** `swift-app/overlay_v1/Overlay/` (SwiftUI / PencilKit, **iPadOS only**)
+**Target platform:** iPad exclusively. Do **not** support iPhone, Mac Catalyst, visionOS, or any other family. The app is iPad-only by product decision.
 **Intent:** Strip the app down to a single translucent canvas surface. Remove the tabbed shell, the Quick Note mode, and the Settings screen. Replace them with two minimal, always-visible edge controls (opacity + grid) and a corner Sessions affordance. While editing, audit the codebase for dead code, redundant state, and rendering hot paths — fix what you find.
 
 ---
 
 ## 1. Product direction (read this first, do not skip)
 
-The app is a translucent sketch surface. The user runs it in a normal iPadOS / iOS window (Split View, Slide Over, Stage Manager, or full-screen) and draws on top of whatever is visible behind. The OS already provides windowing, resizing, and movement — **the app must not reimplement any of it.**
+The app is a translucent sketch surface for **iPad only**. The user runs it in a normal iPadOS window (Split View, Slide Over, Stage Manager, or full-screen) and draws on top of whatever is visible behind. The OS already provides windowing, resizing, and movement — **the app must not reimplement any of it.**
+
+### 1.1 iPad-only enforcement
+- `app.json` / Xcode target: `Targeted Device Family` = iPad only (`UIDeviceFamily = [2]`). Remove `1` (iPhone) and any `7` (visionOS) entries.
+- `supportsTablet: true`, plus `"ios": { "supportsTablet": true }` and explicitly **no** iPhone support flag.
+- Disable Mac Catalyst (`UISupportsMacCatalyst = NO` if present).
+- `UISupportedInterfaceOrientations~ipad`: all four orientations supported. Do not declare phone-only orientation keys.
+- Minimum deployment target: iPadOS 17.0 (we rely on modern PencilKit + SwiftUI behavior — do not lower it).
+- Layout assumptions in code may assume an iPad-class regular size class. You do **not** need compact-width fallbacks. If a `horizontalSizeClass` check exists for phone behavior, delete that branch.
+- Do not add iPhone preview providers, iPhone screenshots, or any compact-layout adaptations.
 
 That means: no "fullscreen vs floating" mode, no draggable internal panel, no quick-note popover, no in-app window chrome. There is exactly one surface: the canvas, edge to edge. Controls live on the edges of that surface and stay out of the way.
 
@@ -51,7 +61,7 @@ After this pass, a `grep -r "OverlayMode\|CanvasMode\|QuickNote\|persistenceEnab
 ### 3.2 Opacity slider (right edge, vertical, discrete)
 - Anchored to the **right edge**, vertically centered, respecting safe-area insets.
 - Discrete steps: `0, 10, 25, 50, 75, 100` (percent). Store as `Int` under `PreferenceKeys.gridOpacityStep`.
-- Visual: a slim vertical track (~6pt wide, ~180pt tall), with a thumb that snaps to the nearest step. Use haptic `selection` feedback on each step change (iOS only — already in deps via `UIKit`).
+- Visual: a slim vertical track (~6pt wide, ~180pt tall), with a thumb that snaps to the nearest step. Use haptic `selection` feedback on each step change via `UISelectionFeedbackGenerator`. Recent iPads support haptics; older iPads no-op silently — do not branch on device.
 - The slider itself is translucent: `.background(.ultraThinMaterial)` capsule, ~40% alpha, so it does not dominate the screen.
 - Controls **only the grid opacity**. Strokes are always 100% opaque — never fade them.
 - At step `0`, the grid is hidden entirely (skip rendering — see §5.1).
@@ -180,6 +190,7 @@ The change is correct when **all** of the following hold:
 8. `grep -r "OverlayMode\|CanvasMode\|QuickNote\|persistenceEnabled\|pencilOnly\|CanvasToolbar\|RootView\|SettingsView" swift-app/` returns zero matches.
 9. Project builds with **zero warnings** in Xcode.
 10. On an iPad device or simulator, drawing latency is visibly identical to Apple Notes — no per-stroke jank, no grid flicker on opacity changes.
+11. The build target is **iPad only**. Attempting to install or run on iPhone, Mac (Catalyst), or visionOS is rejected by the device family settings. Xcode's "Supported Destinations" lists only iPad.
 
 ---
 
