@@ -12,11 +12,73 @@ This prompt is a **checklist contract**. Treat each item under §6 as a delivera
 
 ## 1. Read first — what this prompt is and is not
 
-**It is:** an asset-and-compliance pass to make the app submission-ready for the iPad App Store.
+**It is:** an asset-and-compliance pass to make the app submission-ready for the iPad App Store, **plus** a forensic investigation of why the opacity slider is not actually making the app transparent.
 
-**It is not:** a feature change. Do not redesign UI, refactor architecture beyond what the checklist demands, or wire Supabase. (A separate prompt will handle cloud sync.)
+**It is not:** a feature change beyond fixing the transparency regression. Do not redesign UI, refactor architecture beyond what the checklist demands, or wire Supabase. (A separate prompt will handle cloud sync.)
 
 The app remains **iPad-only**. All asset specs below assume iPad-only targeting.
+
+---
+
+## 1.5 Critical defect to fix in this pass — the opacity slider is fake
+
+### 1.5.1 Symptom (reported by the user, must be reproduced first)
+Moving the app-opacity slider currently changes the **darkness** of the app's fill from darker to lighter — i.e., it interpolates a color value from `#0B0D10` toward something lighter. **The window itself is still fully opaque.** When Overlay is placed next to another app in Split View / Stage Manager, the user cannot see the app behind Overlay through Overlay's window at any slider value. That is a regression of prompt 02's §3 ("see through the whole app") and the entire premise of the product.
+
+The agent must, before doing anything else in this prompt:
+1. Reproduce the bug on the iPad simulator with two apps tiled.
+2. Capture a short note in the report describing what the slider is currently doing in code (e.g., "the fill layer's `.fill(Color.black.opacity(...))` is the only thing animated; the `UIWindow` is still fully opaque, and the canvas root view's background is `.background(.regularMaterial)` which is opaque").
+3. Only then proceed to the fix.
+
+### 1.5.2 Recursive Apple-documentation investigation (mandatory)
+Before writing the fix, the agent must read the following Apple sources end-to-end with `mcp__tavily__web_extract`, then summarize what each one says about **letting content from other apps show through your window** on iPadOS:
+
+- `UIWindow` — https://developer.apple.com/documentation/uikit/uiwindow
+- `UIView.isOpaque` — https://developer.apple.com/documentation/uikit/uiview/1622622-isopaque
+- `UIView.backgroundColor` — https://developer.apple.com/documentation/uikit/uiview/1622591-backgroundcolor
+- `UIWindowScene` — https://developer.apple.com/documentation/uikit/uiwindowscene
+- App lifecycle / scene composition on iPadOS — https://developer.apple.com/documentation/uikit/app_and_environment/scenes
+- Multitasking on iPad (Split View, Slide Over, Stage Manager) — https://developer.apple.com/documentation/uikit/app_and_environment/scenes/specifying_the_scenes_your_app_supports
+- `UIApplicationIsOpaque` Info.plist key — search Apple's `Information Property List` reference at https://developer.apple.com/documentation/bundleresources/information_property_list and report whether this key is documented, deprecated, private, or absent.
+- Liquid Glass / system materials on iPadOS 26 — https://developer.apple.com/design/human-interface-guidelines/materials
+- ScreenCaptureKit / ReplayKit broadcast extensions (only relevant if "see app behind" turns out to require capturing other apps' content via user consent) — https://developer.apple.com/documentation/replaykit and https://developer.apple.com/documentation/screencapturekit
+
+Save the digest at `swift-app/overlay_v1/AppStore/TransparencyInvestigation.md` with:
+- One paragraph per source: what it says, and how it applies to "make Overlay's window let the app behind show through."
+- A clear verdict at the end stating which of the three possible outcomes is true:
+  - **(A) Officially supported:** there is a documented API to make a third-party app's window transparent against the OS compositor on iPadOS. List the exact API, the iPadOS version it landed in, and any review-guideline caveats.
+  - **(B) Possible via standard APIs but with caveats:** e.g., `UIWindow.backgroundColor = .clear` + `isOpaque = false` only reveals the system wallpaper/black, not other apps' content, because each app is sandboxed in its own scene with no compositor blending against neighbors. Document the exact behavior on iPadOS in Split View vs. Stage Manager vs. full-screen.
+  - **(C) Not possible:** iPadOS does not let a third-party app render translucently against another third-party app. The "see app behind" effect can only be achieved by **placing Overlay next to the other app** in Split View / Stage Manager so they share the screen side-by-side, not by compositing through Overlay. In that case, the slider's job is to control how much of Overlay's own area is filled vs. clear (revealing whatever the OS paints behind Overlay's window — typically the wallpaper or a black background, not the neighboring app's pixels).
+
+The verdict drives the implementation in §1.5.3.
+
+### 1.5.3 Implementation rules per verdict
+
+**If (A):** Implement the documented API. Cite the doc URL in code comments. Verify on simulator and a real device.
+
+**If (B) or (C) (most likely):** Do all of the following, even though some may already be in place — re-verify each from scratch:
+
+1. In `OverlayApp.swift` (or wherever the `UIWindow` is created), set:
+   - `window.isOpaque = false`
+   - `window.backgroundColor = .clear`
+   - The hosting `UIViewController.view.isOpaque = false`
+   - The hosting view's `backgroundColor = .clear`
+2. The SwiftUI root container uses `.background(Color.clear)` and **must not** apply `.background(.regularMaterial)`, `.background(.ultraThinMaterial)`, or any solid color at the root.
+3. Every parent SwiftUI view between the window and the canvas must be transparent. Walk the hierarchy with the SwiftUI debugger; any view introducing a non-clear background is a bug.
+4. The "app fill" layer (the one driven by the opacity slider) must be a **single** full-screen `Rectangle().fill(Color(hex: "#0B0D10").opacity(step / 100))` rendered just behind the strokes. At slider = 0 the fill's alpha is 0 and the layer renders **truly clear pixels** (verify by sampling a pixel in the simulator's screenshot — it must be transparent, not `#0B0D10` at low alpha).
+5. **Also fix `Info.plist`**: ensure no `UIRequiresFullScreen = YES` (which would prevent Split View). Add (and document) `UIApplicationIsOpaque = NO` only if the §1.5.2 verdict says it is publicly supported on the current iPadOS; otherwise do **not** add it (it is a private key and would risk rejection).
+6. Update the user-facing copy / label of the slider if needed. If the verdict is (C) and the slider can only ever reveal wallpaper or black, **say so honestly in `Settings` help text** and in the App Store description. Do not advertise "see other apps through the canvas" if the OS does not allow it.
+
+### 1.5.4 Honest reporting back to the user
+
+The report must include a one-paragraph plain-English explanation, sourced from the investigation, of exactly what the slider can and cannot do on iPadOS. If the verdict is (C), the agent must explicitly write: "On iPadOS, third-party apps cannot composite over other third-party apps. The slider controls Overlay's own fill — at 0 it reveals whatever the OS draws behind Overlay's own window region (the wallpaper in full-screen, or nothing in Split View where Overlay's region does not overlap the other app). To draw on top of another app's content, the user places Overlay next to it via Split View / Stage Manager and uses the slider to fade Overlay's own background, with strokes remaining visible." Do not soften this. The user needs the truth so the product framing is correct.
+
+### 1.5.5 Acceptance criteria for the fix
+1. With Overlay full-screen and the slider at 0, a screenshot shows the device wallpaper through Overlay's canvas region (only strokes + edge controls visible from Overlay).
+2. With Overlay in Split View next to Safari and the slider at 0, Overlay's region shows transparent against the OS background; Safari is visible in **its own** half of the screen because the OS places them side-by-side. (If the verdict is (A) and full compositing is possible, Safari is also visible through Overlay's region — note this clearly.)
+3. The slider fade is **alpha**, not a color shift. Visually verify by stopping at 50% — it must look like 50% transparent, not like a midtone gray fill.
+4. No private API or undocumented Info.plist key is added without an explicit, current Apple doc reference.
+5. The `TransparencyInvestigation.md` file exists, cites at least 6 of the URLs in §1.5.2, and ends with one of the three verdicts.
 
 ---
 
@@ -199,6 +261,13 @@ Walk the App Store Review Guidelines and explicitly call out and resolve our exp
 - [ ] English (US) only for v1.0 — document in the metadata draft.
 - [ ] All user-visible strings live in `Localizable.strings` (or `.xcstrings` catalog) so future localization is mechanical. No hard-coded `"Save"` literals scattered in views.
 
+### 6.15a Transparency defect fix (cross-reference to §1.5)
+
+- [ ] §1.5 investigation completed and `TransparencyInvestigation.md` written.
+- [ ] §1.5 implementation applied.
+- [ ] §1.5.5 acceptance criteria all pass.
+- [ ] If marketing copy in §6.10 (`Metadata.md`) implied "see other apps through Overlay" and the verdict is (C), rewrite the copy to match reality.
+
 ### 6.16 Persistence sanity for review
 
 - [ ] Local persistence (existing `SketchRepository`) must survive app kill / cold relaunch. Verify on simulator.
@@ -220,6 +289,7 @@ swift-app/overlay_v1/
     ├── RequirementsSnapshot.md                   (§5)
     ├── Metadata.md                               (§6.10)
     ├── PrivacyAnswers.md                         (§6.4)
+    ├── TransparencyInvestigation.md              (§1.5.2 — verdict + sources)
     ├── TestFlightNotes.md                        (§6.12)
     └── Screenshots/
         └── iPad-13-inch/
