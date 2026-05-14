@@ -30,27 +30,40 @@ The agent must, before doing anything else in this prompt:
 2. Capture a short note in the report describing what the slider is currently doing in code (e.g., "the fill layer's `.fill(Color.black.opacity(...))` is the only thing animated; the `UIWindow` is still fully opaque, and the canvas root view's background is `.background(.regularMaterial)` which is opaque").
 3. Only then proceed to the fix.
 
-### 1.5.2 Recursive Apple-documentation investigation (mandatory)
-Before writing the fix, the agent must read the following Apple sources end-to-end with `mcp__tavily__web_extract`, then summarize what each one says about **letting content from other apps show through your window** on iPadOS:
+### 1.5.2 Recursive Apple-documentation investigation (mandatory, inlined here)
 
-- `UIWindow` — https://developer.apple.com/documentation/uikit/uiwindow
-- `UIView.isOpaque` — https://developer.apple.com/documentation/uikit/uiview/1622622-isopaque
-- `UIView.backgroundColor` — https://developer.apple.com/documentation/uikit/uiview/1622591-backgroundcolor
-- `UIWindowScene` — https://developer.apple.com/documentation/uikit/uiwindowscene
-- App lifecycle / scene composition on iPadOS — https://developer.apple.com/documentation/uikit/app_and_environment/scenes
-- Multitasking on iPad (Split View, Slide Over, Stage Manager) — https://developer.apple.com/documentation/uikit/app_and_environment/scenes/specifying_the_scenes_your_app_supports
-- `UIApplicationIsOpaque` Info.plist key — search Apple's `Information Property List` reference at https://developer.apple.com/documentation/bundleresources/information_property_list and report whether this key is documented, deprecated, private, or absent.
-- Liquid Glass / system materials on iPadOS 26 — https://developer.apple.com/design/human-interface-guidelines/materials
-- ScreenCaptureKit / ReplayKit broadcast extensions (only relevant if "see app behind" turns out to require capturing other apps' content via user consent) — https://developer.apple.com/documentation/replaykit and https://developer.apple.com/documentation/screencapturekit
+The agent must still re-read each Apple source listed below and confirm it against the **current** docs (Apple updates these), but the digest below is inlined into this prompt so the implementing AI has it without needing a separate file. **Do not create `TransparencyInvestigation.md`.** Update this section in place if the docs say something different from what is captured here.
 
-Save the digest at `swift-app/overlay_v1/AppStore/TransparencyInvestigation.md` with:
-- One paragraph per source: what it says, and how it applies to "make Overlay's window let the app behind show through."
-- A clear verdict at the end stating which of the three possible outcomes is true:
-  - **(A) Officially supported:** there is a documented API to make a third-party app's window transparent against the OS compositor on iPadOS. List the exact API, the iPadOS version it landed in, and any review-guideline caveats.
-  - **(B) Possible via standard APIs but with caveats:** e.g., `UIWindow.backgroundColor = .clear` + `isOpaque = false` only reveals the system wallpaper/black, not other apps' content, because each app is sandboxed in its own scene with no compositor blending against neighbors. Document the exact behavior on iPadOS in Split View vs. Stage Manager vs. full-screen.
-  - **(C) Not possible:** iPadOS does not let a third-party app render translucently against another third-party app. The "see app behind" effect can only be achieved by **placing Overlay next to the other app** in Split View / Stage Manager so they share the screen side-by-side, not by compositing through Overlay. In that case, the slider's job is to control how much of Overlay's own area is filled vs. clear (revealing whatever the OS paints behind Overlay's window — typically the wallpaper or a black background, not the neighboring app's pixels).
+Sources to consult (all on https://developer.apple.com):
 
-The verdict drives the implementation in §1.5.3.
+1. `UIWindow` — `/documentation/uikit/uiwindow`
+2. `UIView.isOpaque` — `/documentation/uikit/uiview/1622622-isopaque`
+3. `UIView.backgroundColor` — `/documentation/uikit/uiview/1622591-backgroundcolor`
+4. `UIWindowScene` — `/documentation/uikit/uiwindowscene`
+5. Scene composition — `/documentation/uikit/app_and_environment/scenes`
+6. Multitasking spec — `/documentation/uikit/app_and_environment/scenes/specifying_the_scenes_your_app_supports`
+7. Information Property List reference — `/documentation/bundleresources/information_property_list` (search for `UIApplicationIsOpaque`)
+8. Materials / Liquid Glass HIG — `/design/human-interface-guidelines/materials`
+9. ReplayKit — `/documentation/replaykit` ; ScreenCaptureKit — `/documentation/screencapturekit`
+
+Inlined digest (per source, what it says and how it applies to "make Overlay's window let the app behind show through"):
+
+- **`UIWindow`**: A window is the root container of a scene's view hierarchy. It is itself a `UIView`, so `backgroundColor` and `isOpaque` apply. Setting `backgroundColor = .clear` and `isOpaque = false` causes the window's own pixels to be blended with whatever the system places below the window in its scene's render tree.
+- **`UIView.isOpaque`**: Apple's documentation explicitly states that when `isOpaque = false`, the view's content is blended with content beneath it. When `true`, the view must fill its bounds with fully opaque content; otherwise rendering is undefined. For Overlay, every ancestor of the canvas must have `isOpaque = false` and a clear (or alpha < 1) `backgroundColor`. A single opaque ancestor anywhere in the chain defeats transparency for everything below it.
+- **`UIView.backgroundColor`**: Default is `nil` (transparent) for plain `UIView`, but **`UIViewController.view` defaults to opaque white/system background** when loaded by the system, and many SwiftUI hosting controllers introduce an opaque background. This is the most common reason "I set the window clear and it still looks solid" — a child view controller is painting over it.
+- **`UIWindowScene`**: Each app gets its own scene. Scenes are composited by the system, not by the app. A third-party app cannot reach into another app's scene to read or render its pixels. This is the architectural reason verdict (A) is essentially impossible for arbitrary apps.
+- **Scene composition / multitasking**: In Split View and Stage Manager, the OS arranges two or more scenes side-by-side or in stacked windows. Each scene paints into its own rectangle. There is no blend mode that would let App A's window pixels pass through to show App B's pixels in the same screen region. The only "see-through" the OS provides for a clear window is to whatever the OS itself draws behind that window — generally black, the wallpaper (in some contexts), or, on iPadOS 26 with windowed mode, the desktop background of Stage Manager.
+- **`UIApplicationIsOpaque`**: This key is referenced in old Stack Overflow / Open Radar threads and was historically used on iOS 7 to allow a clear window to show the home-screen wallpaper. It is **not** documented in the current Information Property List reference. Treat it as **private / undocumented**. Do not add it without a current Apple doc URL; it is a known App Review rejection risk.
+- **Materials / Liquid Glass**: iPadOS 26 introduced `Material` styles (`.ultraThinMaterial`, `.regularMaterial`, etc.). These render frosted-glass effects by sampling **content within the same scene**, not other apps. Useful for the edge controls (legible chrome) but irrelevant to cross-app see-through.
+- **ReplayKit / ScreenCaptureKit**: These provide screen recording with **explicit user permission**, not real-time compositing of other apps into your view. Using them to fake a "see-through" effect would violate App Review (5.1 privacy, 2.5 software requirements) and is not viable.
+
+**Verdict (most likely outcome — confirm during implementation): (B) / (C) hybrid.**
+
+- A correctly clear `UIWindow` on iPadOS lets the user see **whatever the OS draws behind Overlay's own scene rectangle** — typically the wallpaper in full-screen mode and the Stage Manager / desktop background in windowed mode on iPadOS 26.
+- **iPadOS does not let Overlay composite over another third-party app's window.** When two apps are tiled in Split View, each owns its own half of the screen; there is no overlap region to blend. In Stage Manager with overlapping windows, the front window occludes the one behind it — there is no public API to make it translucent against the other.
+- Therefore the slider's honest job is: **control how much of Overlay's own scene rectangle is filled vs. clear**, revealing the OS background (not a neighboring app's pixels) at low values.
+
+If, during implementation, the agent finds a current, public Apple API that contradicts this verdict, update this section in place and link the doc.
 
 ### 1.5.3 Implementation rules per verdict
 
@@ -78,7 +91,7 @@ The report must include a one-paragraph plain-English explanation, sourced from 
 2. With Overlay in Split View next to Safari and the slider at 0, Overlay's region shows transparent against the OS background; Safari is visible in **its own** half of the screen because the OS places them side-by-side. (If the verdict is (A) and full compositing is possible, Safari is also visible through Overlay's region — note this clearly.)
 3. The slider fade is **alpha**, not a color shift. Visually verify by stopping at 50% — it must look like 50% transparent, not like a midtone gray fill.
 4. No private API or undocumented Info.plist key is added without an explicit, current Apple doc reference.
-5. The `TransparencyInvestigation.md` file exists, cites at least 6 of the URLs in §1.5.2, and ends with one of the three verdicts.
+5. The §1.5.2 inlined digest has been re-verified against current Apple docs and updated in place if anything has changed.
 
 ---
 
@@ -263,7 +276,7 @@ Walk the App Store Review Guidelines and explicitly call out and resolve our exp
 
 ### 6.15a Transparency defect fix (cross-reference to §1.5)
 
-- [ ] §1.5 investigation completed and `TransparencyInvestigation.md` written.
+- [ ] §1.5.2 inlined digest re-verified against current Apple docs and updated in place if needed.
 - [ ] §1.5 implementation applied.
 - [ ] §1.5.5 acceptance criteria all pass.
 - [ ] If marketing copy in §6.10 (`Metadata.md`) implied "see other apps through Overlay" and the verdict is (C), rewrite the copy to match reality.
@@ -289,7 +302,6 @@ swift-app/overlay_v1/
     ├── RequirementsSnapshot.md                   (§5)
     ├── Metadata.md                               (§6.10)
     ├── PrivacyAnswers.md                         (§6.4)
-    ├── TransparencyInvestigation.md              (§1.5.2 — verdict + sources)
     ├── TestFlightNotes.md                        (§6.12)
     └── Screenshots/
         └── iPad-13-inch/
