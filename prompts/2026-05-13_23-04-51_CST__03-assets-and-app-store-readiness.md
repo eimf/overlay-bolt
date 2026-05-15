@@ -12,86 +12,74 @@ This prompt is a **checklist contract**. Treat each item under §6 as a delivera
 
 ## 1. Read first — what this prompt is and is not
 
-**It is:** an asset-and-compliance pass to make the app submission-ready for the iPad App Store, **plus** a forensic investigation of why the opacity slider is not actually making the app transparent.
+**It is:** an asset-and-compliance pass to make the app submission-ready for the iPad App Store, **plus** a product pivot away from app-window translucency toward a "reference image + translucent grid overlay" model that is achievable within Apple's public APIs.
 
-**It is not:** a feature change beyond fixing the transparency regression. Do not redesign UI, refactor architecture beyond what the checklist demands, or wire Supabase. (A separate prompt will handle cloud sync.)
+**It is not:** a redesign of the rest of the UI, an architecture refactor beyond what §1.5 demands, or a Supabase wiring pass. (Cloud sync stays in a later prompt; if reference images need to persist across sessions or sync to other iPads, that persistence MUST use the existing Supabase project — see `lib/supabase.ts` and the `sketches` migration — never a non-Supabase store.)
 
 The app remains **iPad-only**. All asset specs below assume iPad-only targeting.
 
 ---
 
-## 1.5 Critical defect to fix in this pass — the opacity slider is fake
+## 1.5 Product pivot — drop app-window translucency, add reference-image background
 
-### 1.5.1 Symptom (reported by the user, must be reproduced first)
-Moving the app-opacity slider currently changes the **darkness** of the app's fill from darker to lighter — i.e., it interpolates a color value from `#0B0D10` toward something lighter. **The window itself is still fully opaque.** When Overlay is placed next to another app in Split View / Stage Manager, the user cannot see the app behind Overlay through Overlay's window at any slider value. That is a regression of prompt 02's §3 ("see through the whole app") and the entire premise of the product.
+### 1.5.0 Why this pivot
 
-The agent must, before doing anything else in this prompt:
-1. Reproduce the bug on the iPad simulator with two apps tiled.
-2. Capture a short note in the report describing what the slider is currently doing in code (e.g., "the fill layer's `.fill(Color.black.opacity(...))` is the only thing animated; the `UIWindow` is still fully opaque, and the canvas root view's background is `.background(.regularMaterial)` which is opaque").
-3. Only then proceed to the fix.
+Investigation (see §1.5.2 below — kept for record) confirmed iPadOS does not let a third-party app composite over another third-party app's window. The previous "see the app behind Overlay" pitch is not achievable with public APIs and is not worth chasing further. Instead, we deliver the same end-user value — "trace / annotate over a reference" — by letting the user **place a reference image inside Overlay's own canvas** and controlling the **overlay's** translucency on top of that image.
 
-### 1.5.2 Recursive Apple-documentation investigation (mandatory, inlined here)
+### 1.5.1 What we are removing
 
-The agent must still re-read each Apple source listed below and confirm it against the **current** docs (Apple updates these), but the digest below is inlined into this prompt so the implementing AI has it without needing a separate file. **Do not create `TransparencyInvestigation.md`.** Update this section in place if the docs say something different from what is captured here.
+- The app-window opacity slider and any logic that animates the app's window background, fill color, or root SwiftUI background based on a `step` / `appOpacity` value.
+- All marketing copy, settings help text, and onboarding that says or implies "see the app behind" / "draw on top of any app" / "translucent overlay over other apps." Replace with the framing in §1.5.4.
+- Any `UIWindow.isOpaque = false` / `backgroundColor = .clear` plumbing that exists solely to support the discontinued cross-app translucency. The window can return to its default opaque behavior. (If any of that plumbing also benefits the new reference-image flow, keep it — but do not ship code that exists only to support a feature we no longer offer.)
 
-Sources to consult (all on https://developer.apple.com):
+Delete the dead code rather than commenting it out. Remove the slider control from the toolbar/settings (or repurpose it per §1.5.3 below for the **overlay** opacity, not the **app** opacity).
 
-1. `UIWindow` — `/documentation/uikit/uiwindow`
-2. `UIView.isOpaque` — `/documentation/uikit/uiview/1622622-isopaque`
-3. `UIView.backgroundColor` — `/documentation/uikit/uiview/1622591-backgroundcolor`
-4. `UIWindowScene` — `/documentation/uikit/uiwindowscene`
-5. Scene composition — `/documentation/uikit/app_and_environment/scenes`
-6. Multitasking spec — `/documentation/uikit/app_and_environment/scenes/specifying_the_scenes_your_app_supports`
-7. Information Property List reference — `/documentation/bundleresources/information_property_list` (search for `UIApplicationIsOpaque`)
-8. Materials / Liquid Glass HIG — `/design/human-interface-guidelines/materials`
-9. ReplayKit — `/documentation/replaykit` ; ScreenCaptureKit — `/documentation/screencapturekit`
+### 1.5.2 Apple-doc record (kept for posterity, do not act on it for this pass)
 
-Inlined digest (per source, what it says and how it applies to "make Overlay's window let the app behind show through"):
+The earlier investigation is preserved here so future passes don't redo the work. Sources reviewed: `UIWindow`, `UIView.isOpaque`, `UIView.backgroundColor`, `UIWindowScene`, scenes / multitasking, the Information Property List reference, the Materials HIG, and ReplayKit / ScreenCaptureKit (all on https://developer.apple.com). Verdict: iPadOS sandboxes each app to its own scene rectangle; a clear `UIWindow` reveals only the OS background (wallpaper / Stage Manager desktop), never another app's pixels. `UIApplicationIsOpaque` is undocumented and a review risk. ReplayKit / ScreenCaptureKit are explicit screen-recording APIs and not viable for live cross-app compositing. **Conclusion: shift to the in-app reference-image model in §1.5.3.**
 
-- **`UIWindow`**: A window is the root container of a scene's view hierarchy. It is itself a `UIView`, so `backgroundColor` and `isOpaque` apply. Setting `backgroundColor = .clear` and `isOpaque = false` causes the window's own pixels to be blended with whatever the system places below the window in its scene's render tree.
-- **`UIView.isOpaque`**: Apple's documentation explicitly states that when `isOpaque = false`, the view's content is blended with content beneath it. When `true`, the view must fill its bounds with fully opaque content; otherwise rendering is undefined. For Overlay, every ancestor of the canvas must have `isOpaque = false` and a clear (or alpha < 1) `backgroundColor`. A single opaque ancestor anywhere in the chain defeats transparency for everything below it.
-- **`UIView.backgroundColor`**: Default is `nil` (transparent) for plain `UIView`, but **`UIViewController.view` defaults to opaque white/system background** when loaded by the system, and many SwiftUI hosting controllers introduce an opaque background. This is the most common reason "I set the window clear and it still looks solid" — a child view controller is painting over it.
-- **`UIWindowScene`**: Each app gets its own scene. Scenes are composited by the system, not by the app. A third-party app cannot reach into another app's scene to read or render its pixels. This is the architectural reason verdict (A) is essentially impossible for arbitrary apps.
-- **Scene composition / multitasking**: In Split View and Stage Manager, the OS arranges two or more scenes side-by-side or in stacked windows. Each scene paints into its own rectangle. There is no blend mode that would let App A's window pixels pass through to show App B's pixels in the same screen region. The only "see-through" the OS provides for a clear window is to whatever the OS itself draws behind that window — generally black, the wallpaper (in some contexts), or, on iPadOS 26 with windowed mode, the desktop background of Stage Manager.
-- **`UIApplicationIsOpaque`**: This key is referenced in old Stack Overflow / Open Radar threads and was historically used on iOS 7 to allow a clear window to show the home-screen wallpaper. It is **not** documented in the current Information Property List reference. Treat it as **private / undocumented**. Do not add it without a current Apple doc URL; it is a known App Review rejection risk.
-- **Materials / Liquid Glass**: iPadOS 26 introduced `Material` styles (`.ultraThinMaterial`, `.regularMaterial`, etc.). These render frosted-glass effects by sampling **content within the same scene**, not other apps. Useful for the edge controls (legible chrome) but irrelevant to cross-app see-through.
-- **ReplayKit / ScreenCaptureKit**: These provide screen recording with **explicit user permission**, not real-time compositing of other apps into your view. Using them to fake a "see-through" effect would violate App Review (5.1 privacy, 2.5 software requirements) and is not viable.
+### 1.5.3 What we are adding — reference-image background + overlay grid + overlay opacity
 
-**Verdict (most likely outcome — confirm during implementation): (B) / (C) hybrid.**
+The new flow:
 
-- A correctly clear `UIWindow` on iPadOS lets the user see **whatever the OS draws behind Overlay's own scene rectangle** — typically the wallpaper in full-screen mode and the Stage Manager / desktop background in windowed mode on iPadOS 26.
-- **iPadOS does not let Overlay composite over another third-party app's window.** When two apps are tiled in Split View, each owns its own half of the screen; there is no overlap region to blend. In Stage Manager with overlapping windows, the front window occludes the one behind it — there is no public API to make it translucent against the other.
-- Therefore the slider's honest job is: **control how much of Overlay's own scene rectangle is filled vs. clear**, revealing the OS background (not a neighboring app's pixels) at low values.
+1. The canvas has three stacked layers, bottom-to-top:
+   - **Reference image layer** (new): a single full-canvas image picked by the user. `nil` by default (no image).
+   - **Overlay layer** (existing grid + tint, now repurposed): the dot/line grid plus a tintable fill. This whole layer's alpha is what the slider controls.
+   - **Strokes layer** (existing PencilKit canvas): always fully opaque user ink, never affected by the slider.
+2. The toolbar gets **one new button**: "Reference Image" (icon: `photo` SF Symbol). Tapping it opens a sheet with two actions, in this order:
+   - **Use Latest Screenshot** — appears as the primary action **only if** a screenshot has been taken on the device within the last 60 seconds and is accessible via `PHPhotoLibrary` with the user-granted permission. If unavailable or denied, hide this row (do not show it greyed out). Detection rule: query `PHAsset.fetchAssets(with: .image, options:)` filtered by `mediaSubtypes contains .photoScreenshot`, sorted by `creationDate` descending, take the first asset, accept it only if `creationDate >= now - 60s`.
+   - **Choose from Photos** — opens `PHPickerViewController` (PHPicker, the privacy-preserving picker that does **not** require photo-library permission). This is the always-available path.
+3. Picking an image sets it as the reference layer with `.scaledToFit` inside the canvas bounds (no crop, letterboxed against the canvas background). Add a small "Remove image" affordance in the same sheet when an image is set.
+4. The existing slider is **repurposed** to control the **overlay layer's alpha** (the grid + tint above the image), 0–100%. At 0% the overlay is fully transparent and the user sees the raw reference image with their strokes on top. At 100% the overlay is fully opaque and the reference image is hidden behind it. Default value: 60%. Label the slider "Overlay opacity" in the UI.
+5. Strokes always render on top of both the reference image and the overlay, regardless of slider value.
+6. Persistence: the chosen reference image is stored per-sketch (so reopening a sketch restores the image). Use the existing local sketch store first; the Supabase migration to sync reference images across devices belongs to the cloud-sync prompt. Store images on disk under the sketch's directory, not as base64 in JSON. Track the relative file path in the `Sketch` model.
 
-If, during implementation, the agent finds a current, public Apple API that contradicts this verdict, update this section in place and link the doc.
+### 1.5.4 Honest user-facing framing
 
-### 1.5.3 Implementation rules per verdict
+Replace any prior copy with this voice:
 
-**If (A):** Implement the documented API. Cite the doc URL in code comments. Verify on simulator and a real device.
+- One-liner: "A translucent grid you can drop on top of any photo or screenshot, then sketch over."
+- Paragraph: "Pick a screenshot or photo as a reference. Overlay drops a grid on top of it; slide the overlay's opacity to balance how much of the image you see versus how much grid you see. Then draw with Apple Pencil. Strokes always stay crisp on top."
+- Do not claim cross-app translucency anywhere.
 
-**If (B) or (C) (most likely):** Do all of the following, even though some may already be in place — re-verify each from scratch:
+### 1.5.5 Permissions and Info.plist
 
-1. In `OverlayApp.swift` (or wherever the `UIWindow` is created), set:
-   - `window.isOpaque = false`
-   - `window.backgroundColor = .clear`
-   - The hosting `UIViewController.view.isOpaque = false`
-   - The hosting view's `backgroundColor = .clear`
-2. The SwiftUI root container uses `.background(Color.clear)` and **must not** apply `.background(.regularMaterial)`, `.background(.ultraThinMaterial)`, or any solid color at the root.
-3. Every parent SwiftUI view between the window and the canvas must be transparent. Walk the hierarchy with the SwiftUI debugger; any view introducing a non-clear background is a bug.
-4. The "app fill" layer (the one driven by the opacity slider) must be a **single** full-screen `Rectangle().fill(Color(hex: "#0B0D10").opacity(step / 100))` rendered just behind the strokes. At slider = 0 the fill's alpha is 0 and the layer renders **truly clear pixels** (verify by sampling a pixel in the simulator's screenshot — it must be transparent, not `#0B0D10` at low alpha).
-5. **Also fix `Info.plist`**: ensure no `UIRequiresFullScreen = YES` (which would prevent Split View). Add (and document) `UIApplicationIsOpaque = NO` only if the §1.5.2 verdict says it is publicly supported on the current iPadOS; otherwise do **not** add it (it is a private key and would risk rejection).
-6. Update the user-facing copy / label of the slider if needed. If the verdict is (C) and the slider can only ever reveal wallpaper or black, **say so honestly in `Settings` help text** and in the App Store description. Do not advertise "see other apps through the canvas" if the OS does not allow it.
+- Use `PHPickerViewController` for the "Choose from Photos" path — it does **not** require `NSPhotoLibraryUsageDescription`.
+- The "Use Latest Screenshot" path **does** require photo-library read access (because `PHAsset.fetchAssets` reads the library directly). Add `NSPhotoLibraryUsageDescription` with the string: `Overlay reads your most recent screenshot only when you tap "Use Latest Screenshot," so you can sketch over it.` Request access lazily — only when the user first taps that row, never on launch.
+- Do **not** add `NSPhotoLibraryAddUsageDescription` (we never write to the library).
+- Confirm `UIRequiresFullScreen` is absent or `NO` so Split View still works.
+- Drop any `UIApplicationIsOpaque` key if it was added.
 
-### 1.5.4 Honest reporting back to the user
+### 1.5.6 Acceptance criteria for the pivot
 
-The report must include a one-paragraph plain-English explanation, sourced from the investigation, of exactly what the slider can and cannot do on iPadOS. If the verdict is (C), the agent must explicitly write: "On iPadOS, third-party apps cannot composite over other third-party apps. The slider controls Overlay's own fill — at 0 it reveals whatever the OS draws behind Overlay's own window region (the wallpaper in full-screen, or nothing in Split View where Overlay's region does not overlap the other app). To draw on top of another app's content, the user places Overlay next to it via Split View / Stage Manager and uses the slider to fade Overlay's own background, with strokes remaining visible." Do not soften this. The user needs the truth so the product framing is correct.
-
-### 1.5.5 Acceptance criteria for the fix
-1. With Overlay full-screen and the slider at 0, a screenshot shows the device wallpaper through Overlay's canvas region (only strokes + edge controls visible from Overlay).
-2. With Overlay in Split View next to Safari and the slider at 0, Overlay's region shows transparent against the OS background; Safari is visible in **its own** half of the screen because the OS places them side-by-side. (If the verdict is (A) and full compositing is possible, Safari is also visible through Overlay's region — note this clearly.)
-3. The slider fade is **alpha**, not a color shift. Visually verify by stopping at 50% — it must look like 50% transparent, not like a midtone gray fill.
-4. No private API or undocumented Info.plist key is added without an explicit, current Apple doc reference.
-5. The §1.5.2 inlined digest has been re-verified against current Apple docs and updated in place if anything has changed.
+1. The toolbar shows a "Reference Image" button. Tapping it opens a sheet with the rules in §1.5.3 step 2.
+2. If a screenshot was taken in the last 60 seconds and photo-library permission is granted, "Use Latest Screenshot" appears as the primary row and selecting it loads that screenshot as the canvas's reference image with no extra picker step.
+3. "Choose from Photos" always appears, uses `PHPickerViewController`, and works without the user ever granting `NSPhotoLibraryUsageDescription`.
+4. The slider, now labeled "Overlay opacity," controls only the grid+tint overlay layer. At 0% the reference image is fully visible behind strokes; at 100% the overlay fully hides the image. Strokes remain crisp at every slider value.
+5. With no reference image set, the canvas behaves the same as before this pivot (grid + strokes on the app's solid background). The slider still controls the overlay layer's alpha — at 0% the user sees the bare app background.
+6. No code path in the shipped binary still tries to make the `UIWindow` clear, animate window opacity, or claim cross-app translucency.
+7. App Store description, in-app onboarding (if any), and the README all use the §1.5.4 framing exclusively.
+8. Re-opening a sketch restores its previously chosen reference image from local storage.
 
 ---
 
@@ -274,12 +262,13 @@ Walk the App Store Review Guidelines and explicitly call out and resolve our exp
 - [ ] English (US) only for v1.0 — document in the metadata draft.
 - [ ] All user-visible strings live in `Localizable.strings` (or `.xcstrings` catalog) so future localization is mechanical. No hard-coded `"Save"` literals scattered in views.
 
-### 6.15a Transparency defect fix (cross-reference to §1.5)
+### 6.15a Reference-image pivot (cross-reference to §1.5)
 
-- [ ] §1.5.2 inlined digest re-verified against current Apple docs and updated in place if needed.
-- [ ] §1.5 implementation applied.
-- [ ] §1.5.5 acceptance criteria all pass.
-- [ ] If marketing copy in §6.10 (`Metadata.md`) implied "see other apps through Overlay" and the verdict is (C), rewrite the copy to match reality.
+- [ ] §1.5.1 removals applied: app-window opacity slider/logic deleted, marketing copy purged of cross-app translucency claims, dead window-clearing plumbing removed.
+- [ ] §1.5.3 implementation applied: Reference Image button, "Use Latest Screenshot" detection (60s window + screenshot media subtype), `PHPickerViewController` for "Choose from Photos", three-layer canvas (image / overlay / strokes), slider repurposed to overlay opacity (default 60%), per-sketch persistence of reference image on disk.
+- [ ] §1.5.5 Info.plist updated: `NSPhotoLibraryUsageDescription` added with the exact string from §1.5.5; no `NSPhotoLibraryAddUsageDescription`; no `UIRequiresFullScreen = YES`; no `UIApplicationIsOpaque`.
+- [ ] §1.5.6 acceptance criteria all pass on simulator.
+- [ ] §6.10 (`Metadata.md`) and any onboarding copy use only the §1.5.4 framing.
 
 ### 6.16 Persistence sanity for review
 
