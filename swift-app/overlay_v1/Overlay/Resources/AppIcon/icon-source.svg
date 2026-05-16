@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Source reference only — actual PNGs were rendered with ImageMagick native draw commands -->
+  <rect width="1024" height="1024" fill="#0B0D10"/>
+  <!-- Scribble: four connected cubic bezier segments -->
+  <path d="M260,580 C300,420 360,520 420,400 C480,280 480,560 540,480 C600,400 620,520 700,420 C740,380 760,440 780,430"
+        fill="none" stroke="#4ADE80" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="780" cy="430" r="16" fill="#4ADE80"/>
+</svg>
