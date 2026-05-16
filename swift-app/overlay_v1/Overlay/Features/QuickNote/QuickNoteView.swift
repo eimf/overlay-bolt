@@ -8,10 +8,10 @@ private let defaultSize = CGSize(width: 420, height: 340)
 
 struct QuickNoteView: View {
     @EnvironmentObject var env: AppEnvironment
-    @AppStorage(PreferenceKeys.overlayMode) private var overlayModeRaw: String = OverlayMode.quickNote.rawValue
-    @AppStorage(PreferenceKeys.pencilOnly) private var pencilOnly: Bool = false
-    @AppStorage(PreferenceKeys.gridType) private var gridRaw: String = GridType.dots.rawValue
-    @AppStorage(PreferenceKeys.canvasOpacity) private var canvasOpacity: Double = 1.0
+    @AppStorage(PreferenceKeys.overlayMode, store: PreferenceKeys.store) private var overlayModeRaw: String = OverlayMode.quickNote.rawValue
+    @AppStorage(PreferenceKeys.pencilOnly, store: PreferenceKeys.store) private var pencilOnly: Bool = false
+    @AppStorage(PreferenceKeys.gridType, store: PreferenceKeys.store) private var gridRaw: String = GridType.dots.rawValue
+    @AppStorage(PreferenceKeys.canvasOpacity, store: PreferenceKeys.store) private var canvasOpacity: Double = 1.0
 
     // Panel position & size
     @State private var panelPosition: CGPoint = .zero

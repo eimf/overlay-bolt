@@ -7,6 +7,9 @@ enum PreferenceKeys {
     static let pencilOnly = "pencilOnly"
     static let canvasMode = "canvasMode"
     static let overlayMode = "overlayMode"
+
+    /// Custom suite avoids "Reading from public effective user settings" console noise.
+    static let store = UserDefaults(suiteName: "com.overlay.preferences")!
 }
 
 enum OverlayMode: String, CaseIterable {

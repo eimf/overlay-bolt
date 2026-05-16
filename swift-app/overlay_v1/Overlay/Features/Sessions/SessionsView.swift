@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SessionsView: View {
     @EnvironmentObject var env: AppEnvironment
-    @AppStorage(PreferenceKeys.persistenceEnabled) private var persistenceEnabled: Bool = true
+    @AppStorage(PreferenceKeys.persistenceEnabled, store: PreferenceKeys.store) private var persistenceEnabled: Bool = true
     var onNavigateToSettings: () -> Void = {}
 
     var body: some View {

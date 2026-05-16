@@ -17,10 +17,21 @@ struct PencilCanvasView: UIViewRepresentable {
         canvas.drawing = drawing
         canvas.delegate = context.coordinator
         canvas.tool = makeTool()
+
+        // Prevent touch-coordinate offset caused by safe-area insets
+        // when embedded inside TabView or other containers.
+        canvas.scrollView.contentInsetAdjustmentBehavior = .never
+        canvas.scrollView.isScrollEnabled = false
+        canvas.scrollView.panGestureRecognizer.minimumNumberOfTouches = 2
+        canvas.scrollView.bounces = false
+
         return canvas
     }
 
     func updateUIView(_ canvas: PKCanvasView, context: Context) {
+        let coordinator = context.coordinator
+        // Guard against feedback loops: only push external drawing changes
+        guard !coordinator.isUpdatingFromCanvas else { return }
         if canvas.drawing != drawing {
             canvas.drawing = drawing
         }
@@ -46,15 +57,16 @@ struct PencilCanvasView: UIViewRepresentable {
 
     final class Coordinator: NSObject, PKCanvasViewDelegate {
         private let parent: PencilCanvasView
+        var isUpdatingFromCanvas = false
 
         init(_ parent: PencilCanvasView) {
             self.parent = parent
         }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-            DispatchQueue.main.async {
-                self.parent.drawing = canvasView.drawing
-            }
+            isUpdatingFromCanvas = true
+            parent.drawing = canvasView.drawing
+            isUpdatingFromCanvas = false
         }
     }
 }

@@ -1,12 +1,12 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @AppStorage(PreferenceKeys.persistenceEnabled) private var persistenceEnabled: Bool = true
-    @AppStorage(PreferenceKeys.gridType) private var gridRaw: String = GridType.dots.rawValue
-    @AppStorage(PreferenceKeys.canvasOpacity) private var canvasOpacity: Double = 1.0
-    @AppStorage(PreferenceKeys.pencilOnly) private var pencilOnly: Bool = false
-    @AppStorage(PreferenceKeys.canvasMode) private var modeRaw: String = CanvasMode.fullscreen.rawValue
-    @AppStorage(PreferenceKeys.overlayMode) private var overlayModeRaw: String = OverlayMode.tabs.rawValue
+    @AppStorage(PreferenceKeys.persistenceEnabled, store: PreferenceKeys.store) private var persistenceEnabled: Bool = true
+    @AppStorage(PreferenceKeys.gridType, store: PreferenceKeys.store) private var gridRaw: String = GridType.dots.rawValue
+    @AppStorage(PreferenceKeys.canvasOpacity, store: PreferenceKeys.store) private var canvasOpacity: Double = 1.0
+    @AppStorage(PreferenceKeys.pencilOnly, store: PreferenceKeys.store) private var pencilOnly: Bool = false
+    @AppStorage(PreferenceKeys.canvasMode, store: PreferenceKeys.store) private var modeRaw: String = CanvasMode.fullscreen.rawValue
+    @AppStorage(PreferenceKeys.overlayMode, store: PreferenceKeys.store) private var overlayModeRaw: String = OverlayMode.tabs.rawValue
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"

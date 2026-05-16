@@ -2,7 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject var env: AppEnvironment
-    @AppStorage(PreferenceKeys.overlayMode) private var overlayModeRaw: String = OverlayMode.tabs.rawValue
+    @AppStorage(PreferenceKeys.overlayMode, store: PreferenceKeys.store) private var overlayModeRaw: String = OverlayMode.tabs.rawValue
     @State private var selectedTab: Int = 0
 
     private var overlayMode: OverlayMode {

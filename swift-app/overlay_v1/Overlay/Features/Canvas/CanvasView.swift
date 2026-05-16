@@ -5,11 +5,11 @@ import UIKit
 struct CanvasView: View {
     @EnvironmentObject var env: AppEnvironment
 
-    @AppStorage(PreferenceKeys.canvasOpacity) private var canvasOpacity: Double = 1.0
-    @AppStorage(PreferenceKeys.pencilOnly) private var pencilOnly: Bool = false
-    @AppStorage(PreferenceKeys.gridType) private var gridRaw: String = GridType.dots.rawValue
-    @AppStorage(PreferenceKeys.canvasMode) private var modeRaw: String = CanvasMode.fullscreen.rawValue
-    @AppStorage(PreferenceKeys.persistenceEnabled) private var persistenceEnabled: Bool = true
+    @AppStorage(PreferenceKeys.canvasOpacity, store: PreferenceKeys.store) private var canvasOpacity: Double = 1.0
+    @AppStorage(PreferenceKeys.pencilOnly, store: PreferenceKeys.store) private var pencilOnly: Bool = false
+    @AppStorage(PreferenceKeys.gridType, store: PreferenceKeys.store) private var gridRaw: String = GridType.dots.rawValue
+    @AppStorage(PreferenceKeys.canvasMode, store: PreferenceKeys.store) private var modeRaw: String = CanvasMode.fullscreen.rawValue
+    @AppStorage(PreferenceKeys.persistenceEnabled, store: PreferenceKeys.store) private var persistenceEnabled: Bool = true
 
     @State private var showSavedToast: Bool = false
     @State private var showSaveSheet: Bool = false
